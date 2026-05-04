@@ -910,19 +910,47 @@ function buildFeedback(text) {
   const verdict = extract(text, 'VERDICT')     || 'Evaluated';
   const fb      = extract(text, 'FEEDBACK')    || text;
   const best    = extract(text, 'BEST ANSWER') || '';
-  const vColor  = verdict.toLowerCase().includes('partially') ? 'var(--amber)'
-                : verdict.toLowerCase().includes('incorrect') ? 'var(--red)'
-                : 'var(--green)';
 
-  return `<div class="fb-card done">
-    <div class="fb-label">✦ AI Evaluation</div>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-      <span class="score-pill">${esc(score)}</span>
-      <span style="font-size:13px;font-weight:600;color:${vColor}">${esc(verdict)}</span>
+  const vLower = verdict.toLowerCase();
+
+  const vColor =
+    vLower.includes('partially') ? 'var(--amber)' :
+    vLower.includes('incorrect') ? 'var(--red)' :
+    'var(--green)';
+
+  // 🔥 IMPORTANT: dynamic card color
+  const cardClass =
+    vColor === 'var(--green)' ? 'done' :
+    vColor === 'var(--amber)' ? 'loading' :
+    'error';
+
+  return `
+    <div class="fb-card ${cardClass}">
+      <div class="fb-label">✦ AI Evaluation</div>
+
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <span class="score-pill">${esc(score)}</span>
+        <span style="font-size:13px;font-weight:600;color:${vColor}">
+          ${esc(verdict)}
+        </span>
+      </div>
+
+      ${fb ? `
+        <div class="fb-section">
+          <div class="fb-sec-lbl">Feedback</div>
+          <div class="fb-sec-body">${esc(fb)}</div>
+        </div>
+      ` : ''}
+
+      ${best ? `
+        <div class="fb-section" style="background:rgba(5,150,105,.07);border-radius:10px;padding:12px;margin-top:8px">
+          <div class="fb-sec-lbl">Model Answer</div>
+          <div class="fb-sec-body">${esc(best)}</div>
+        </div>
+      ` : ''}
+
     </div>
-    ${fb ? `<div class="fb-section"><div class="fb-sec-lbl">Feedback</div><div class="fb-sec-body">${esc(fb)}</div></div>` : ''}
-    ${best ? `<div class="fb-section" style="background:rgba(5,150,105,.07);border-radius:10px;padding:12px;margin-top:8px"><div class="fb-sec-lbl">Model Answer</div><div class="fb-sec-body">${esc(best)}</div></div>` : ''}
-  </div>`;
+  `;
 }
 
 /* ═══════════════════════════════════

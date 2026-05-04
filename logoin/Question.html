@@ -404,61 +404,85 @@ let modalInstance = null;
    INIT
 ═══════════════════════════════════════════════════════════════ */
 window.addEventListener('DOMContentLoaded', () => {
-  modalInstance = new bootstrap.Modal(document.getElementById('attemptModal'), {
-    backdrop: true, keyboard: true, focus: true
-  });
-  updateUserUI();
-  loadQuestions();
-});
+  modalInstance = new bootstrap.Modal(
+    document.getElementById('attemptModal'),
+    { backdrop: true, keyboard: true, focus: true }
+  );
 
+  updateUserUI();
+
+  // 🔥 FIX (important)
+  setTimeout(() => loadQuestions(), 0);
+});
 /* ═══════════════════════════════════════════════════════════════
    LOAD QUESTIONS
 ═══════════════════════════════════════════════════════════════ */
+
+let isLoading = false;
+let hasLoaded = false;
+
 async function loadQuestions() {
+  if (isLoading || hasLoaded) return;
+  isLoading = true;
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
 
-    const res = await fetch(`${BASE_URL}/api/questions`, {
+    const url = BASE_URL
+      ? `${BASE_URL}/api/questions`
+      : `/api/questions`;
+
+    console.log("📡 Fetching:", url);
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { "Accept": "application/json" },
       signal: controller.signal
     });
 
     clearTimeout(timeout);
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
 
     const data = await res.json();
 
-    if (!Array.isArray(data) || data.length === 0) {
-      throw new Error("Empty response from backend");
+    if (!Array.isArray(data)) {
+      throw new Error("Invalid response format");
     }
 
     qs = data.map(q => ({
-      id:       Number(q.id),
-      title:    q.title       || "Untitled",
-      topic:    q.topic       || "General",
-      diff:     q.difficulty  || "Easy",
-      desc:     q.description || "",
-      answer:   q.answer      || "",
+      id: Number(q.id),
+      title: q.title || "Untitled",
+      topic: q.topic || "General",
+      diff: q.difficulty || "Easy",
+      desc: q.description || "",
+      answer: q.answer || ""
     }));
+
+    hasLoaded = true;
 
   } catch (err) {
-    console.warn("Backend issue, using demo data:", err.message);
+    console.warn("⚠ Backend issue:", err.message);
 
-    showError(`Backend issue (${err.message}). Showing demo data.`);
+    showError(`Backend issue (${err.message})`);
 
     qs = DEMO_QUESTIONS.map(q => ({
-      id:     Number(q.id),
-      title:  q.title,
-      topic:  q.topic,
-      diff:   q.difficulty,
-      desc:   q.description,
-      answer: q.answer || "",
+      id: Number(q.id),
+      title: q.title,
+      topic: q.topic,
+      diff: q.difficulty,
+      desc: q.description,
+      answer: q.answer || ""
     }));
-  }
 
-  attachProgress();
-  render();
+  } finally {
+    isLoading = false;
+    attachProgress();
+    render();
+  }
 }
 /* ═══════════════════════════════════════════════════════════════
    FILTERS
@@ -657,16 +681,20 @@ async function doSubmit() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
 
-    const res = await fetch(`${BASE_URL}/api/ai/ask`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        question: q.title,
-        description: q.desc,
-        answer: answer
-      }),
-      signal: controller.signal
-    });
+    const aiUrl = BASE_URL
+  ? `${BASE_URL}/api/ai/ask`
+  : `/api/ai/ask`;
+
+const res = await fetch(aiUrl, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    question: q.title,
+    description: q.desc,
+    answer: answer
+  }),
+  signal: controller.signal
+});
 
     clearTimeout(timeout);
 
@@ -807,7 +835,7 @@ function buildFeedbackCard(text, isCorrect) {
     ` : ''}
 
   </div>
-`;
+`};
 
 /* ═══════════════════════════════════════════════════════════════
    ✅ FIX 2: TOGGLE BOOKMARK — no stray characters, uses getUserKey
