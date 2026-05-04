@@ -529,6 +529,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+  const BASE_URL = "https://interview-prep-7s2n.onrender.com";
 /* ═══════════════════════════════════
    NOTIFICATION SYSTEM
 ═══════════════════════════════════ */
@@ -676,14 +677,21 @@ async function handleRegister() {
   btn.innerHTML = '<div class="btn-spinner"></div> Creating account…';
 
   try {
-    // ✅ FIX: use Render backend URL
-    const res = await fetch('https://interview-prep-7s2n.onrender.com/api/auth/register', {
+    // 🔥 Timeout + AbortController (Render sleep fix)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const res = await fetch(`${BASE_URL}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password, role: 'USER' })
+      body: JSON.stringify({ name, email, password, role: 'USER' }),
+      signal: controller.signal
     });
 
+    clearTimeout(timeout);
+
     /* ── Handle errors ── */
+
     if (res.status === 409 || res.status === 400) {
       const msg = await res.text();
 
@@ -718,18 +726,23 @@ async function handleRegister() {
     showToast('Account created successfully! 🎉', 'success');
 
     setTimeout(() => {
-      window.location.href = 'index.html'; // redirect to login
+      window.location.href = 'index.html'; // login page redirect
     }, 1200);
 
   } catch (err) {
     console.error('Register error:', err);
 
-    showBanner(
-      's2Banner',
-      'error',
-      'Connection Failed',
-      'Backend not reachable or CORS issue.'
-    );
+    // 🔥 Handle Render sleep / timeout
+    if (err.name === "AbortError") {
+      showBanner('s2Banner', 'warning', 'Server Slow',
+        'Backend is waking up. Please try again.');
+    } else if (err.name === "TypeError") {
+      showBanner('s2Banner', 'error', 'Network Error',
+        'Unable to connect to server.');
+    } else {
+      showBanner('s2Banner', 'error', 'Registration Failed',
+        err.message || 'Something went wrong.');
+    }
 
   } finally {
     btn.disabled = false;

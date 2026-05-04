@@ -470,6 +470,8 @@
    NOTIFICATION SYSTEM — no alerts
 ═══════════════════════════════════ */
 
+const BASE_URL = "https://interview-prep-7s2n.onrender.com";
+
 /* Main inline banner below the header */
 function showBanner(type, title, desc) {
   const banner = document.getElementById('mainBanner');
@@ -579,7 +581,7 @@ async function handleLogin(e) {
 
   try {
     // ✅ FIX: store fetch result in res
-    const res = await fetch('https://interview-prep-7s2n.onrender.com/api/auth/login', {
+    const res = await fetch(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
@@ -626,15 +628,14 @@ async function handleLogin(e) {
     }, 800);
 
   } catch (err) {
-    console.error('Login error:', err);
+  console.error('Login error:', err);
 
-    showBanner(
-      'error',
-      'Connection Failed',
-      'Backend not reachable or CORS issue.'
-    );
-
-  } finally {
+  showBanner(
+    'error',
+    'Login Failed',
+    err.message || 'Something went wrong. Please try again.'
+  );
+} finally {
     setLoading(false);
   }
 }
