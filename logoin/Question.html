@@ -416,9 +416,14 @@ window.addEventListener('DOMContentLoaded', () => {
 ═══════════════════════════════════════════════════════════════ */
 async function loadQuestions() {
   try {
-    // ❌ REMOVED AbortController (was causing request cancel)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
 
-    const res = await fetch(`${BASE_URL}/api/questions`);
+    const res = await fetch(`${BASE_URL}/api/questions`, {
+      signal: controller.signal
+    });
+
+    clearTimeout(timeout);
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
@@ -438,9 +443,9 @@ async function loadQuestions() {
     }));
 
   } catch (err) {
-    console.warn("Backend unreachable, using demo data:", err.message);
+    console.warn("Backend issue, using demo data:", err.message);
 
-    showError(`Backend not reachable (${err.message}). Showing demo data.`);
+    showError(`Backend issue (${err.message}). Showing demo data.`);
 
     qs = DEMO_QUESTIONS.map(q => ({
       id:     Number(q.id),
@@ -639,7 +644,7 @@ async function doSubmit() {
   const fbEl = document.getElementById('mFeedback');
 
   btn.disabled  = true;
-  btn.innerHTML = '<span class="spinner" style="display:inline-block;margin-right:8px"></span> Evaluating…';
+  btn.innerHTML = '<span class="spinner" style="margin-right:8px"></span> Evaluating…';
 
   fbEl.innerHTML = `
     <div class="feedback-card loading">
@@ -648,31 +653,33 @@ async function doSubmit() {
     </div>`;
 
   try {
+    // 🔥 Timeout handling
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
     const res = await fetch(`${BASE_URL}/api/ai/ask`, {
       method: "POST",
-      headers: { "Content-Type": "text/plain" },
-      body: `You are an expert interview coach. Evaluate this answer strictly and helpfully.
-
-Question: ${q.title}
-Description: ${q.desc}
-Candidate's Answer: ${answer}
-
-Respond in this EXACT format:
-SCORE: [X/10]
-VERDICT: [Correct / Partially Correct / Incorrect]
-FEEDBACK: [2-3 sentences]
-BEST ANSWER: [3-5 sentences]`
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: q.title,
+        description: q.desc,
+        answer: answer
+      }),
+      signal: controller.signal
     });
 
-    if (!res.ok) throw new Error(`API error ${res.status}`);
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      throw new Error("AI service not available");
+    }
 
     const aiText = await res.text();
 
-    // ✅ EXTRACT SCORE
+    // 🔥 Extract values
     const scoreText = extractSection(aiText, 'SCORE') || '0/10';
     const scoreNum  = parseInt(scoreText.split('/')[0]) || 0;
 
-    // ✅ EXTRACT VERDICT
     const verdictText = extractSection(aiText, 'VERDICT') || 'incorrect';
 
     let verdict = 'incorrect';
@@ -684,23 +691,19 @@ BEST ANSWER: [3-5 sentences]`
 
     const isCorrect = verdict === 'correct';
 
-    // ✅ SAVE RESULT (FIXES RESULTS PAGE)
+    // 🔥 Save result
     const results = getResults();
     results.push({
-  id: curId,
-  score: scoreNum,
-  verdict: verdict,
-  correct: isCorrect,
-  timestamp: Date.now(),
-  date: new Date().toISOString().slice(0,10) // 🔥 FIX
-});
+      id: curId,
+      score: scoreNum,
+      verdict: verdict,
+      correct: isCorrect,
+      timestamp: Date.now(),
+      date: new Date().toISOString().slice(0,10)
+    });
     saveResults(results);
 
-    // ✅ AI SESSION COUNT
-    let aiCount = parseInt(localStorage.getItem('aiSessionCount') || '0');
-    localStorage.setItem('aiSessionCount', aiCount + 1);
-
-    // ✅ STREAK LOGIC
+    // 🔥 Streak logic
     const today = new Date().toDateString();
     const lastKey   = getUserKey('lastPractice');
     const streakKey = getUserKey('streak');
@@ -709,7 +712,7 @@ BEST ANSWER: [3-5 sentences]`
     let streak = parseInt(localStorage.getItem(streakKey) || '0');
 
     if (last === today) {
-      // same day → no change
+      // no change
     } else if (last === new Date(Date.now() - 86400000).toDateString()) {
       streak++;
     } else {
@@ -719,18 +722,15 @@ BEST ANSWER: [3-5 sentences]`
     localStorage.setItem(lastKey, today);
     localStorage.setItem(streakKey, streak);
 
-    // ✅ UI UPDATE
+    // 🔥 Update UI
     attachProgress();
     render();
-    // updateDashboardStats?.();
 
-    // ✅ SHOW RESULT
     fbEl.innerHTML = buildFeedbackCard(aiText, isCorrect);
 
   } catch (err) {
     console.error("AI call failed:", err);
 
-    // ❗ STILL SAVE ATTEMPT (important for streak)
     const results = getResults();
     results.push({
       id: curId,
@@ -741,20 +741,24 @@ BEST ANSWER: [3-5 sentences]`
     });
     saveResults(results);
 
-    fbEl.innerHTML = `
-      <div class="feedback-card error">
-        <div class="fb-title">⚠ AI Evaluation Failed</div>
-        <div style="font-size:13.5px;color:var(--ink2)">
-          Could not reach AI (${escHtml(err.message)})
-        </div>
-      </div>`;
+    if (err.name === "AbortError") {
+      fbEl.innerHTML = `
+        <div class="feedback-card error">
+          <div class="fb-title">⏳ Server Slow</div>
+          <div>Backend is waking up. Try again.</div>
+        </div>`;
+    } else {
+      fbEl.innerHTML = `
+        <div class="feedback-card error">
+          <div class="fb-title">⚠ AI Failed</div>
+          <div>${err.message}</div>
+        </div>`;
+    }
   }
 
   btn.disabled  = false;
-  btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Try Again';
+  btn.innerHTML = '<i class="bi bi-send-fill me-1"></i> Submit Again';
 }
-
-
 
 function parseVerdict(text) {
   const lower = text.toLowerCase();
@@ -778,24 +782,32 @@ function buildFeedbackCard(text, isCorrect) {
     ? 'var(--amber)' : 'var(--red)';
 
   return `
-    <div class="feedback-card success">
-      <div class="fb-title">✦ AI Evaluation</div>
-      <div class="score-row">
-        <span class="score-pill">${escHtml(score)}</span>
-        <span style="font-size:13px;font-weight:600;color:${verdictColor}">${escHtml(verdict)}</span>
+  <div class="feedback-card ${isCorrect ? 'success' : 'error'}">
+    <div class="fb-title">✦ AI Evaluation</div>
+
+    <div class="score-row">
+      <span class="score-pill">${escHtml(score)}</span>
+      <span style="font-size:13px;font-weight:600;color:${verdictColor}">
+        ${escHtml(verdict)}
+      </span>
+    </div>
+
+    ${feedback ? `
+      <div class="fb-section">
+        <div class="fb-section-lbl">Feedback</div>
+        <div class="fb-section-body">${escHtml(feedback)}</div>
       </div>
-      ${feedback ? `
-        <div class="fb-section">
-          <div class="fb-section-lbl">Feedback</div>
-          <div class="fb-section-body">${escHtml(feedback)}</div>
-        </div>` : ''}
-      ${bestAnswer ? `
-        <div class="fb-section" style="background:rgba(5,150,105,.06);border-radius:10px;padding:12px">
-          <div class="fb-section-lbl">Model Answer</div>
-          <div class="fb-section-body">${escHtml(bestAnswer)}</div>
-        </div>` : ''}
-    </div>`;
-}
+    ` : ''}
+
+    ${bestAnswer ? `
+      <div class="fb-section" style="background:rgba(5,150,105,.06);border-radius:10px;padding:12px">
+        <div class="fb-section-lbl">Model Answer</div>
+        <div class="fb-section-body">${escHtml(bestAnswer)}</div>
+      </div>
+    ` : ''}
+
+  </div>
+`;
 
 /* ═══════════════════════════════════════════════════════════════
    ✅ FIX 2: TOGGLE BOOKMARK — no stray characters, uses getUserKey

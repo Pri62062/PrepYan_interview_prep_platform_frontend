@@ -1110,14 +1110,13 @@
   }
 
   /* ─── SEND MESSAGE ──────────────────────────────────────── */
- async function sendMessage(retry = false) {
-
+async function sendMessage(retry = false) {
   const ta = document.getElementById('msgInput');
   let text = ta.value.trim();
 
   if (!text || isSending) return;
 
-  // ✅ LIMIT INPUT SIZE
+  // 🔒 limit input size
   if (text.length > 2000) {
     alert("Input too long! Reduce size.");
     return;
@@ -1129,25 +1128,32 @@
   setSending(true);
   ta.value = "";
 
-  appendMsg("user", text);
+  appendMsg("user", text, currentMode);
   appendTyping();
 
   try {
+    // 🔥 timeout (Render sleep fix)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
     const res = await fetch(BASE_URL + cfg.endpoint, {
       method: "POST",
-      headers: { "Content-Type": "text/plain" },
-      body: text
+      headers: { "Content-Type": "text/plain" },   // ✅ FIXED
+      body: text,                                  // ✅ FIXED
+      signal: controller.signal
     });
 
-    // 🔥 RATE LIMIT FIX
+    clearTimeout(timeout);
+
+    // 🔥 rate limit handling
     if (res.status === 429 && !retry) {
       removeTyping();
-      appendError("⚠️ Rate limit hit. Retrying in 20s...");
-      
+      appendError("⚠️ Rate limit hit. Retrying in 20 seconds...");
+
       await new Promise(r => setTimeout(r, 20000));
+
       isSending = false;
       setSending(false);
-
       return sendMessage(true);
     }
 
@@ -1156,14 +1162,39 @@
     removeTyping();
 
     if (!res.ok) {
-      throw new Error(responseText);
+      throw new Error(responseText || `HTTP ${res.status}`);
     }
 
-    appendMsg("ai", responseText);
+    // ✅ show AI response
+    appendMsg("ai", responseText, currentMode);
+
+    // ✅ API counter
+    apiCount++;
+    updateCounters();
+
+    // ✅ preview update
+    const preview = document.getElementById('rpRespPreview');
+    if (preview) {
+      preview.textContent = responseText.slice(0, 300);
+      preview.classList.remove('loading', 'error');
+    }
 
   } catch (err) {
     removeTyping();
-    appendError(err.message);
+
+    if (err.name === "AbortError") {
+      appendError("⏳ Server slow (Render waking up). Try again.");
+    } else {
+      appendError(err.message || "Something went wrong");
+    }
+
+    const preview = document.getElementById('rpRespPreview');
+    if (preview) {
+      preview.textContent = err.message;
+      preview.classList.remove('loading');
+      preview.classList.add('error');
+    }
+
   } finally {
     isSending = false;
     setSending(false);

@@ -302,24 +302,49 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 async function loadData() {
   const local = getResults();
-  if (!local.length) { renderEmptyStats(); renderEmpty(); return; }
+
+  if (!local.length) {
+    renderEmptyStats();
+    renderEmpty();
+    return;
+  }
 
   try {
-    const r = await fetch(`${BASE_URL}/api/questions`, { signal: AbortSignal.timeout(6000) });
+    const r = await fetch(`${BASE_URL}/api/questions`, {
+      signal: AbortSignal.timeout(6000)
+    });
+
     if (!r.ok) throw new Error();
     allQuestions = await r.json();
-  } catch { allQuestions = []; }
+
+  } catch {
+    allQuestions = [];
+  }
 
   allAttempts = local.map((r, i) => {
     const q = allQuestions.find(q => q.id === r.id) || {};
+
     return {
-      rowId: i + 1, id: r.id,
+      rowId: i + 1,
+      id: r.id,
+
       title:      q.title      || `Question #${r.id}`,
       topic:      q.topic      || "—",
       difficulty: q.difficulty || "—",
-      score:      r.score      ?? null,
-      verdict:    r.verdict    || (r.correct ? "correct" : "incorrect"),
-      timestamp:  r.timestamp  || Date.now()
+
+      // ✅ FIX 1: score safe
+      score: typeof r.score === "number" ? r.score : 0,
+
+      // ✅ FIX 2: better verdict handling
+      verdict:
+        r.verdict ||
+        (r.correct === true
+          ? "correct"
+          : r.correct === false
+          ? "incorrect"
+          : "partial"),
+
+      timestamp: r.timestamp || Date.now()
     };
   });
 

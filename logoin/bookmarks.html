@@ -807,26 +807,25 @@ async function doSubmit() {
     </div>`;
 
   try {
+    // 🔥 TIMEOUT FIX (Render sleep issue)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
     const res = await fetch(`${BASE_URL}/api/ai/ask`, {
       method: "POST",
-      headers: { "Content-Type": "text/plain" },
-
-      // ✅ OPTIMIZED PROMPT (VERY IMPORTANT)
-      body: `Evaluate:
-
-Q: ${q.title}
-A: ${answer}
-
-Return:
-SCORE:
-VERDICT:
-FEEDBACK:
-BEST ANSWER:`
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: q.title,
+        description: q.desc,
+        answer: answer
+      }),
+      signal: controller.signal
     });
 
+    clearTimeout(timeout);
+
     if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`API ${res.status} - ${errText}`);
+      throw new Error(`AI error ${res.status}`);
     }
 
     const aiText = await res.text();
@@ -835,7 +834,7 @@ BEST ANSWER:`
       throw new Error("Empty AI response");
     }
 
-    // ✅ FIXED VERDICT LOGIC
+    // ✅ verdict logic
     const txt = aiText.toLowerCase();
     const isCorr =
       txt.includes("correct") &&
@@ -868,8 +867,13 @@ BEST ANSWER:`
   } catch (err) {
     console.error("AI ERROR:", err);
 
-    // 🚨 HANDLE RATE LIMIT
-    if (
+    if (err.name === "AbortError") {
+      fbEl.innerHTML = `
+        <div class="fb-card error">
+          <div class="fb-label">⏳ Server Slow</div>
+          <div>Backend is waking up. Try again.</div>
+        </div>`;
+    } else if (
       err.message.includes("429") ||
       err.message.toLowerCase().includes("rate")
     ) {
